@@ -2,34 +2,36 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """
-Tests for TinyMind, a fixed-weight ternary AI inference accelerator.
+Tests for TinyMind, an 8-input, 3-class fixed-weight AI inference accelerator.
 
-The design uses:
+All eight input switches are binary features.
 
-    ui_in[6:0] = seven binary input features
-    ui_in[7]   = display mode
+The design calculates three class scores:
 
-Display modes:
+    A = AI-oriented
+    H = Hardware-oriented
+    C = Creative-oriented
 
-    ui_in[7] = 0 -> show predicted class: A, H, or C
-    ui_in[7] = 1 -> show confidence margin: 0 through 9
+The seven-segment display has two views:
 
-The test checks all:
+    show_confidence = 0 -> predicted class: A, H, or C
+    show_confidence = 1 -> confidence margin: 0 through 9
 
-    128 feature combinations
-    × 2 display modes
-    = 256 total input combinations
+The internal display-view register toggles on every rising clock edge.
+
+Reset returns the display to class view.
 """
 
 import cocotb
-from cocotb.triggers import Timer
+from cocotb.clock import Clock
+from cocotb.triggers import ClockCycles, Timer
 
 
 # ---------------------------------------------------------------------------
 # Seven-segment patterns
 # ---------------------------------------------------------------------------
 #
-# These constants must match the patterns in src/project.v.
+# These values must match src/project.v.
 #
 # Segment order:
 #
@@ -77,24 +79,25 @@ CLASS_SEGMENTS = {
 
 def calculate_prediction(features: int) -> tuple[str, int, int, int, int]:
     """
-    Software reference model of the three hardware neurons.
+    Software reference model matching the Verilog neuron equations.
 
     Parameters
     ----------
     features:
-        Seven-bit value containing feature inputs x0 through x6.
+        Eight-bit integer containing x0 through x7.
 
     Returns
     -------
     tuple:
-        predicted class,
-        AI score,
-        hardware score,
-        creative score,
-        confidence margin
+        predicted_class,
+        score_ai,
+        score_hardware,
+        score_creative,
+        confidence_margin
     """
 
-    # Extract each feature bit as either integer 0 or 1.
+    # Extract the eight input features.
+    # Each feature is either 0 or 1.
     x0 = (features >> 0) & 1
     x1 = (features >> 1) & 1
     x2 = (features >> 2) & 1
@@ -102,37 +105,31 @@ def calculate_prediction(features: int) -> tuple[str, int, int, int, int]:
     x4 = (features >> 4) & 1
     x5 = (features >> 5) & 1
     x6 = (features >> 6) & 1
+    x7 = (features >> 7) & 1
 
     # -----------------------------------------------------------------------
     # AI-oriented neuron
     #
-    # Weights:
-    #
-    #   x0 Math        +1
-    #   x1 Programming +1
-    #   x2 Electronics  0
-    #   x3 Physics      0
-    #   x4 Data        +1
-    #   x5 Building    -1
-    #   x6 Creativity   0
-    #   Bias           +1
+    # score_ai =
+    #     +x0
+    #     +x1
+    #     +x4
+    #     -x5
+    #     +x7
+    #     +1 bias
     # -----------------------------------------------------------------------
 
-    score_ai = x0 + x1 + x4 - x5 + 1
+    score_ai = x0 + x1 + x4 - x5 + x7 + 1
 
     # -----------------------------------------------------------------------
     # Hardware-oriented neuron
     #
-    # Weights:
-    #
-    #   x0 Math        +1
-    #   x1 Programming  0
-    #   x2 Electronics +1
-    #   x3 Physics     +1
-    #   x4 Data         0
-    #   x5 Building    +1
-    #   x6 Creativity  -1
-    #   Bias            0
+    # score_hardware =
+    #     +x0
+    #     +x2
+    #     +x3
+    #     +x5
+    #     -x6
     # -----------------------------------------------------------------------
 
     score_hardware = x0 + x2 + x3 + x5 - x6
@@ -140,28 +137,25 @@ def calculate_prediction(features: int) -> tuple[str, int, int, int, int]:
     # -----------------------------------------------------------------------
     # Creative-oriented neuron
     #
-    # Weights:
-    #
-    #   x0 Math         0
-    #   x1 Programming -1
-    #   x2 Electronics -1
-    #   x3 Physics      0
-    #   x4 Data         0
-    #   x5 Building    +1
-    #   x6 Creativity  +1
-    #   Bias           +1
+    # score_creative =
+    #     -x1
+    #     -x2
+    #     +x5
+    #     +x6
+    #     +x7
+    #     +1 bias
     # -----------------------------------------------------------------------
 
-    score_creative = -x1 - x2 + x5 + x6 + 1
+    score_creative = -x1 - x2 + x5 + x6 + x7 + 1
 
     # -----------------------------------------------------------------------
-    # Select the winning class.
+    # Winner selection
     #
     # Tie priority must match the Verilog:
     #
-    #   AI first
-    #   Hardware second
-    #   Creative third
+    #     A first
+    #     H second
+    #     C third
     # -----------------------------------------------------------------------
 
     if score_ai >= score_hardware and score_ai >= score_creative:
@@ -181,7 +175,7 @@ def calculate_prediction(features: int) -> tuple[str, int, int, int, int]:
 
     confidence_margin = winning_score - second_score
 
-    # The hardware limits the displayed margin to one decimal digit.
+    # The hardware limits the display to one decimal digit.
     confidence_margin = min(confidence_margin, 9)
 
     return (
@@ -198,12 +192,12 @@ def expected_class_output(
     confidence_margin: int,
 ) -> int:
     """
-    Build the expected 8-bit output for class-display mode.
+    Build the expected 8-bit class-view output.
 
-    uo_out[6:0] contains the class character.
+    uo_out[6:0] shows A, H, or C.
 
-    uo_out[7], the decimal point, turns on when the winning margin is
-    zero or one, indicating that the prediction is close.
+    uo_out[7] is the decimal point and turns on when the confidence
+    margin is zero or one.
     """
 
     segments = CLASS_SEGMENTS[predicted_class]
@@ -216,37 +210,57 @@ def expected_class_output(
 
 def expected_confidence_output(confidence_margin: int) -> int:
     """
-    Build the expected 8-bit output for confidence-display mode.
+    Build the expected 8-bit confidence-view output.
 
-    The decimal point remains off in this mode.
+    The decimal point is off in confidence mode.
     """
 
-    segments = DIGIT_SEGMENTS[confidence_margin]
-
-    return segments
+    return DIGIT_SEGMENTS[confidence_margin]
 
 
 @cocotb.test()
 async def test_project(dut):
     """
-    Exhaustively verify all feature patterns in both display modes.
+    Exhaustively test all 256 input combinations in both display views.
     """
 
     dut._log.info("Starting exhaustive TinyMind test")
 
-    # The current design is combinational, but all inputs should still be
-    # placed into known states for reliable RTL and gate-level simulation.
-    dut.ena.value = 1
-    dut.clk.value = 0
-    dut.rst_n.value = 1
-    dut.uio_in.value = 0
-    dut.ui_in.value = 0
+    # Start the clock.
+    #
+    # The design toggles between class view and confidence view
+    # on every rising edge.
+    clock = Clock(dut.clk, 10, unit="us")
+    cocotb.start_soon(clock.start())
 
-    # Allow the circuit to settle before testing.
+    # Put all inputs into known initial conditions.
+    dut.ena.value = 1
+    dut.ui_in.value = 0
+    dut.uio_in.value = 0
+
+    # -----------------------------------------------------------------------
+    # Apply reset
+    #
+    # rst_n = 0 resets show_confidence to zero,
+    # meaning the display starts in class view.
+    # -----------------------------------------------------------------------
+
+    dut.rst_n.value = 0
+    await ClockCycles(dut.clk, 2)
+
+    dut.rst_n.value = 1
     await Timer(1, unit="us")
 
-    # There are 128 possible combinations of seven feature switches.
-    for features in range(128):
+    # -----------------------------------------------------------------------
+    # Test every possible eight-feature input pattern.
+    # -----------------------------------------------------------------------
+
+    for features in range(256):
+
+        dut.ui_in.value = features
+
+        # Allow combinational score and display logic to settle.
+        await Timer(1, unit="us")
 
         (
             predicted_class,
@@ -256,24 +270,36 @@ async def test_project(dut):
             confidence_margin,
         ) = calculate_prediction(features)
 
-        # -------------------------------------------------------------------
-        # Test class-display mode: ui_in[7] = 0
-        # -------------------------------------------------------------------
-
-        class_mode_input = features
-        dut.ui_in.value = class_mode_input
-
-        await Timer(1, unit="us")
-
         expected_class = expected_class_output(
             predicted_class,
             confidence_margin,
         )
 
+        expected_confidence = expected_confidence_output(
+            confidence_margin
+        )
+
+        # -------------------------------------------------------------------
+        # Return to class view before checking this input.
+        #
+        # Reset is used for every input combination so the test always starts
+        # from a known display state.
+        # -------------------------------------------------------------------
+
+        dut.rst_n.value = 0
+        await Timer(1, unit="us")
+
+        dut.rst_n.value = 1
+        await Timer(1, unit="us")
+
+        # -------------------------------------------------------------------
+        # Check class view.
+        # -------------------------------------------------------------------
+
         actual_class = int(dut.uo_out.value)
 
         dut._log.info(
-            f"features={features:07b} "
+            f"features={features:08b} "
             f"scores(A,H,C)=("
             f"{score_ai},{score_hardware},{score_creative}) "
             f"class={predicted_class} "
@@ -283,42 +309,59 @@ async def test_project(dut):
         )
 
         assert actual_class == expected_class, (
-            f"Class mode failed for features {features:07b}: "
+            f"Class view failed for features {features:08b}: "
             f"expected class {predicted_class}, "
             f"expected output {expected_class:08b}, "
             f"received {actual_class:08b}"
         )
 
         # -------------------------------------------------------------------
-        # Test confidence-display mode: ui_in[7] = 1
+        # Press the step clock once.
+        #
+        # The rising edge changes show_confidence from 0 to 1.
         # -------------------------------------------------------------------
 
-        confidence_mode_input = features | 0b1000_0000
-        dut.ui_in.value = confidence_mode_input
-
+        await ClockCycles(dut.clk, 1)
         await Timer(1, unit="us")
 
-        expected_confidence = expected_confidence_output(
-            confidence_margin
-        )
+        # -------------------------------------------------------------------
+        # Check confidence view.
+        # -------------------------------------------------------------------
 
         actual_confidence = int(dut.uo_out.value)
 
         dut._log.info(
-            f"features={features:07b} "
+            f"features={features:08b} "
             f"confidence={confidence_margin} "
             f"confidence_expected={expected_confidence:08b} "
             f"confidence_actual={actual_confidence:08b}"
         )
 
         assert actual_confidence == expected_confidence, (
-            f"Confidence mode failed for features {features:07b}: "
-            f"expected margin {confidence_margin}, "
+            f"Confidence view failed for features {features:08b}: "
+            f"expected confidence margin {confidence_margin}, "
             f"expected output {expected_confidence:08b}, "
             f"received {actual_confidence:08b}"
         )
 
-        # The bidirectional pins are unused in every mode.
+        # -------------------------------------------------------------------
+        # Press the step clock again.
+        #
+        # The display should return to class view.
+        # -------------------------------------------------------------------
+
+        await ClockCycles(dut.clk, 1)
+        await Timer(1, unit="us")
+
+        actual_class_again = int(dut.uo_out.value)
+
+        assert actual_class_again == expected_class, (
+            f"Second class view failed for features {features:08b}: "
+            f"expected output {expected_class:08b}, "
+            f"received {actual_class_again:08b}"
+        )
+
+        # Bidirectional pins must remain unused.
         assert int(dut.uio_out.value) == 0, (
             f"Expected uio_out=00000000, "
             f"received {int(dut.uio_out.value):08b}"
@@ -330,5 +373,5 @@ async def test_project(dut):
         )
 
     dut._log.info(
-        "All 128 feature combinations passed in both display modes"
+        "All 256 input combinations passed in class and confidence views"
     )
