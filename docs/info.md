@@ -1,50 +1,58 @@
 # TinyMind – A Tiny AI Inference Accelerator
 
-TinyMind is a miniature AI inference accelerator implemented entirely in digital hardware.
+## Motivation
 
-Instead of running software, this chip contains three simple artificial neurons built directly from logic gates.
+Modern Artificial Intelligence (AI) systems such as image classifiers, speech recognizers, and large language models are built from millions—or even billions—of artificial neurons. During **training**, these neurons learn numerical parameters called **weights** from large datasets. Once training is complete, the learned weights are deployed to specialized hardware where they are repeatedly used to make predictions. This process is called **inference**.
 
-The goal of the project is to demonstrate one of the most important ideas behind modern AI hardware:
+TinyMind is a miniature educational ASIC that demonstrates this exact principle on a much smaller scale.
 
-> **Training happens before fabrication. Inference happens on the chip.**
+Instead of billions of neurons, TinyMind contains three.
+
+Instead of millions of weights, TinyMind uses a handful of fixed **ternary weights** (`+1`, `0`, and `−1`) implemented directly in digital logic.
+
+Although intentionally simple, the chip illustrates the same high-level inference pipeline found in modern AI accelerators.
 
 ---
 
-# Vocabulary
+# Project Goal
 
-Before trying the project, here are a few important words.
+The goal of TinyMind is to demonstrate how AI inference can be implemented directly in digital hardware.
+
+Rather than executing software instructions on a CPU, TinyMind performs its classification entirely using combinational logic synthesized into silicon.
+
+This project was developed as part of the Tiny Tapeout educational ASIC program to help explain the relationship between:
+
+- Machine Learning
+- Digital Logic Design
+- ASIC Implementation
+- Hardware AI Accelerators
+
+---
+
+# AI Vocabulary
 
 ## Artificial Neuron
 
-An artificial neuron is a small mathematical model inspired by neurons in the human brain.
+An artificial neuron is a small mathematical function that combines several inputs to produce a score.
 
-It receives several inputs, combines them using a set of weights, and produces a score.
+Each neuron evaluates the same inputs but uses a different set of weights.
 
-The neuron with the highest score "wins."
+The neuron with the highest score becomes the prediction.
 
 ---
 
 ## Feature
 
-A feature is simply one piece of information given to the AI.
+A feature is one piece of information given to the AI.
 
-In TinyMind, every input switch represents one feature.
+TinyMind uses the eight input switches as binary features.
 
-For example:
+Each feature is either
 
-- Likes mathematics
-- Likes programming
-- Likes electronics
-- Likes physics
-- Likes data and patterns
-- Likes building things
-- Likes creativity
-- Likes experimentation and research
-
-Each feature is either:
-
-- **0** → No
-- **1** → Yes
+```
+0 = OFF
+1 = ON
+```
 
 ---
 
@@ -52,41 +60,25 @@ Each feature is either:
 
 A weight tells the neuron how important a feature is.
 
-TinyMind uses **ternary weights**, meaning every weight is one of only three values.
+TinyMind uses **ternary weights**, meaning every weight can only be
 
 | Weight | Meaning |
-|---------|----------|
-| +1 | This feature supports the class |
+|---------|---------|
+| +1 | Supports this class |
 | 0 | Ignore this feature |
-| -1 | This feature works against the class |
+| -1 | Works against this class |
 
-For example, if an AI-oriented neuron thinks mathematics is important, it might assign:
-
-```
-Math → +1
-```
-
-If it thinks electronics are not important, it might assign:
-
-```
-Electronics → 0
-```
-
-If it thinks building things makes the prediction less likely, it might assign:
-
-```
-Building → -1
-```
+Using ternary weights removes the need for hardware multipliers, making the circuit much smaller while still demonstrating neural-network inference.
 
 ---
 
 ## Training
 
-Training is the process of learning the best weights.
+Training is the process of determining the best weights.
 
-Normally this happens on a computer or GPU using many examples.
+Training normally happens on powerful computers or GPUs using many example datasets.
 
-TinyMind **does not perform training.**
+TinyMind **does not perform training**.
 
 Its weights are permanently built into the hardware.
 
@@ -94,156 +86,207 @@ Its weights are permanently built into the hardware.
 
 ## Inference
 
-Inference means making a prediction using already-learned weights.
+Inference is the process of making predictions using previously learned weights.
 
-This is exactly what TinyMind does.
-
-Every time the switches change, the chip immediately performs a new prediction.
+Every time the switches change, TinyMind immediately performs a new inference.
 
 ---
 
-# How TinyMind Works
+# Hardware Architecture
 
-TinyMind contains **three artificial neurons** running in parallel.
+TinyMind contains three independent artificial neurons.
 
-Each neuron represents one possible class.
+Each neuron evaluates the same eight input features.
 
 ```
-              Eight Input Features
-                      │
-                      ▼
-         ┌────────────────────────┐
-         │   AI Neuron            │
-         └────────────────────────┘
-                      │
-                      ▼
-         ┌────────────────────────┐
-         │ Hardware Neuron        │
-         └────────────────────────┘
-                      │
-                      ▼
-         ┌────────────────────────┐
-         │ Creative Neuron        │
-         └────────────────────────┘
-                      │
-                      ▼
-            Compare the three scores
-                      │
-                      ▼
-            Highest score wins
+                 Eight Input Features
+
+                        │
+                        ▼
+
+          ┌─────────────────────────┐
+          │     AI Neuron           │
+          └─────────────────────────┘
+
+          ┌─────────────────────────┐
+          │  Hardware Neuron        │
+          └─────────────────────────┘
+
+          ┌─────────────────────────┐
+          │  Creative Neuron        │
+          └─────────────────────────┘
+
+                        │
+                        ▼
+
+             Winner-Takes-All Logic
+
+                        │
+                        ▼
+
+             Seven-Segment Display
 ```
 
-Each neuron calculates a score using its own fixed weights.
+All three neurons operate simultaneously.
 
-The neuron with the highest score becomes the prediction.
+This parallel computation is one of the defining characteristics of AI accelerators.
 
 ---
 
-# Display
+# Hardware Dataflow
 
-The Tiny Tapeout demonstration board has only a single seven-segment display.
+The complete inference pipeline is shown below.
 
-TinyMind alternates between two views whenever the step clock is pressed.
+```
+        Binary Input Features
 
-## View 1 – Predicted Class
+                │
 
-The display shows:
+                ▼
 
-| Display | Meaning |
-|----------|----------|
-| A | AI-oriented |
-| H | Hardware-oriented |
-| C | Creative-oriented |
+      Fixed Ternary Weights
 
-If the decimal point is illuminated, the prediction was very close.
+                │
+
+                ▼
+
+     Three Parallel Neurons
+
+                │
+
+                ▼
+
+       Score Calculation
+
+                │
+
+                ▼
+
+    Winner-Takes-All Selection
+
+                │
+
+                ▼
+
+ Seven-Segment Display Output
+```
+
+Unlike a CPU, TinyMind does not execute instructions.
+
+The hardware itself performs the neural-network computation.
 
 ---
 
-## View 2 – Confidence Margin
+# Example Inference
 
-The display shows a digit from **0–9**.
-
-This is calculated as:
+Suppose the eight switches are set to
 
 ```
-Winning Score − Second Highest Score
+10110010
 ```
 
-A larger number means the AI made a stronger decision.
+Each neuron independently calculates a score.
 
-A smaller number means two classes produced similar scores.
-
----
-
-# Example
-
-Suppose the switches are:
-
-| Feature | Value |
-|----------|------|
-| Mathematics | Yes |
-| Programming | Yes |
-| Electronics | No |
-| Physics | No |
-| Data | Yes |
-| Building | No |
-| Creativity | No |
-| Research | Yes |
-
-Internally, the three neurons might calculate:
-
-| Class | Score |
-|--------|------:|
+| Neuron | Score |
+|---------|------:|
 | AI | **5** |
 | Hardware | 2 |
 | Creative | 1 |
 
-The display first shows:
+The AI neuron has the highest score.
+
+The display therefore shows
 
 ```
 A
 ```
 
-Press the step clock once.
-
-The display changes to:
+Pressing the step clock changes the display to
 
 ```
 3
 ```
 
-This means the AI class won by three points.
+The value **3** is the confidence margin:
+
+```
+Winning Score − Second Highest Score
+```
+
+A larger value indicates a stronger prediction.
+
+---
+
+# Using the Demo Board
+
+The Tiny Tapeout demonstration board provides
+
+- Eight input switches
+- One seven-segment display
+- One step clock
+
+Operation is simple:
+
+1. Set the eight input switches.
+2. Observe the predicted class.
+3. Press the step clock.
+4. Observe the confidence margin.
+5. Press the clock again to return to the class display.
+
+Try changing only one switch at a time and observe how the prediction changes.
 
 ---
 
 # Why This Is an AI Accelerator
 
-Modern AI accelerators perform large numbers of neural-network calculations in dedicated hardware.
+Modern AI accelerators contain dedicated hardware for neural-network inference.
 
-TinyMind demonstrates the exact same idea on a much smaller scale.
+TinyMind demonstrates the same architectural idea on a much smaller scale.
 
-Instead of billions of neurons, TinyMind contains three.
+Instead of software repeatedly executing arithmetic instructions, the inference logic is permanently implemented in hardware.
 
-Instead of millions of weights, TinyMind contains a handful of fixed ternary weights.
-
-Although extremely small, it illustrates the same fundamental inference process used by modern AI hardware.
+Although TinyMind contains only three neurons, the overall processing flow is conceptually similar to larger commercial inference accelerators.
 
 ---
 
-# How to Test
+# Educational Takeaways
 
-1. Move any combination of the eight input switches.
-2. Observe the predicted class on the seven-segment display.
-3. Press the step clock.
-4. Observe the confidence margin.
-5. Continue experimenting with different feature combinations.
+TinyMind demonstrates several important concepts in modern AI hardware:
 
-Notice how changing only one feature can sometimes change the prediction.
+- Binary feature vectors
+- Artificial neurons
+- Fixed ternary weights
+- Parallel inference
+- Winner-takes-all classification
+- Confidence estimation
+- Hardware implementation of neural networks
+
+These same principles appear in much larger AI accelerators used in data centers, edge devices, and embedded systems.
+
+---
+
+# Future Improvements
+
+Future versions of TinyMind could include:
+
+- Training the weights using Python before hardware generation
+- Automatically exporting trained weights into Verilog
+- Larger neural networks with hidden layers
+- Additional output classes
+- Interactive learning demonstrations
 
 ---
 
 # External Hardware
 
-This project uses only the standard Tiny Tapeout demonstration board.
+TinyMind requires only the standard Tiny Tapeout demonstration board.
 
 No additional external hardware is required.
+
+---
+
+# About Tiny Tapeout
+
+TinyMind was created as part of the Tiny Tapeout educational ASIC program (Virtual 2026)
+
+The project explores how machine-learning inference can be represented directly in digital logic, synthesized into standard cells, placed and routed into a manufacturable layout, and ultimately fabricated as a real integrated circuit.
